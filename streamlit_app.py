@@ -94,7 +94,7 @@ category_colors = {
 
 TFIDF_PICKLE = 'processed/tfidf_vectorizer.pkl'
 MODEL_PICKLE = 'stacking_news_model.pkl'
-STOPWORDS_FILE = 'data/cnews.vocab.txt'
+STOPWORDS_FILE = 'cnews.vocab.txt'
 
 @st.cache_resource
 def load_vectorizer():
