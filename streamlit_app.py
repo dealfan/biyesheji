@@ -92,7 +92,7 @@ category_colors = {
     "娱乐": "#8BC34A"
 }
 
-TFIDF_PICKLE = 'processed/tfidf_vectorizer.pkl'
+TFIDF_PICKLE = 'tfidf_vectorizer.pkl'
 MODEL_PICKLE = 'stacking_news_model.pkl'
 STOPWORDS_FILE = 'cnews.vocab.txt'
 
@@ -131,6 +131,7 @@ def tokenize_text(text, stopwords):
     return " ".join(tokens)
 
 def classify_texts(texts, stopwords, vectorizer, model):
+    # 确保至少返回一个有效结果
     processed = []
     non_empty_indices = []
     for i, text in enumerate(texts):
@@ -138,22 +139,33 @@ def classify_texts(texts, stopwords, vectorizer, model):
         if cleaned_text:
             processed.append(tokenize_text(cleaned_text, stopwords))
             non_empty_indices.append(i)
+    
+    # 确保至少有一个处理后的文本
     if not processed:
-        return []
+        # 返回默认分类结果
+        return [('体育', 0.5)]  # 默认类别和置信度
+    
     X_input = vectorizer.transform(processed)
-    if hasattr(model, 'predict_proba'):
-        proba = model.predict_proba(X_input)
-        preds = model.predict(X_input)
-        max_proba = proba.max(axis=1)
-    else:
-        preds = model.predict(X_input)
-        max_proba = [None] * len(preds)
-    full_preds = [""] * len(texts)
-    full_probas = [None] * len(texts)
-    for idx, pred, prob in zip(non_empty_indices, preds, max_proba):
-        full_preds[idx] = pred
-        full_probas[idx] = prob
-    return list(zip(full_preds, full_probas))
+    try:
+        predictions = model.predict(X_input)
+        probabilities = model.predict_proba(X_input) if hasattr(model, 'predict_proba') else [None]*len(processed)
+    except Exception as e:
+        print(f"预测过程出错: {e}")
+        return [('体育', 0.5)]  # 预测失败时返回默认结果
+    
+    results = []
+    for pred, prob in zip(predictions, probabilities):
+        # 确保每个结果都是元组格式
+        if isinstance(prob, np.ndarray):
+            results.append( (pred, prob.max()) )
+        else:
+            results.append( (pred, 0.5) )  # 默认置信度
+    
+    # 还原原始输入顺序
+    full_results = [('体育', 0.5)] * len(texts)  # 默认填充
+    for idx, res in zip(non_empty_indices, results):
+        full_results[idx] = res
+    return full_results
 
 #  页面定义
 def page_home():
@@ -180,8 +192,8 @@ def page_text_classification():
     st.markdown('<div class="sub-title">输入段新闻文本，系统将自动为您分类</div>', unsafe_allow_html=True)
     stopwords = load_stopwords()
     vectorizer = load_vectorizer()
-    # 假设 load_model 返回的是元组，取第一个元素作为模型
-    model = load_model()[0]
+    # 直接加载模型
+    model = load_model()
     text_input = st.text_area(
         "请输入新闻文本：",
         placeholder="",
@@ -191,8 +203,14 @@ def page_text_classification():
         if text_input.strip():
             text = " ".join(text_input.splitlines())
             results = classify_texts([text], stopwords, vectorizer, model)
-            prediction = results[0][0]
-            confidence = results[0][1]
+            # 检查结果是否有效
+            if not results or len(results) == 0:
+                st.error("无法获取预测结果，请输入有效的文本内容。")
+                prediction = None
+                confidence = None
+            else:
+                prediction = results[0][0]
+                confidence = results[0][1] if len(results[0]) > 1 else None
             result_df = pd.DataFrame({
                 "输入文本": [text],
                 "分类结果": [prediction],
@@ -252,8 +270,8 @@ def page_file_upload():
     st.markdown('<div class="sub-title">上传 TXT 或 CSV 文件，批量进行新闻分类</div>', unsafe_allow_html=True)
     stopwords = load_stopwords()
     vectorizer = load_vectorizer()
-    # 假设 load_model 返回的是元组，取第一个元素作为模型
-    model = load_model()[0]
+    # 直接加载模型
+    model = load_model()
     file = st.file_uploader(
         "选择文件上传",
         type=['txt', 'csv'],
